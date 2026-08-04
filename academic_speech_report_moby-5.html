@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moby - Academic Report & Speech Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <style>
+        :root{
+            --moby-green: #0fae72;
+            --moby-green-dark: #0b8f5d;
+            --moby-green-light: #e6f8f0;
+            --moby-text: #1c2b2a;
+            --moby-muted: #7c8b89;
+            --moby-bg: #f4f7f6;
+            --moby-danger: #e0524a;
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0;
+            background:var(--moby-bg);
+            font-family:'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif;
+            color:var(--moby-text);
+            padding-bottom:40px;
+        }
+
+        @media print {
+            .no-print{ display:none !important; }
+            body{ background:#fff; }
+            .paper-preview{ border:none; padding:0; }
+            #reportTable th{ background:#fff !important; color:#000 !important; border:1px solid #000 !important; }
+            #reportTable td{ border:1px solid #000 !important; color:#000 !important; }
+        }
+        /* Jedwali la mwisho litakaloonekana kwenye PDF/Print - rasmi: wino mweusi, bila rangi */
+        #reportTable.official-mode th{
+            background:#fff !important; color:#000 !important; border:1px solid #000 !important;
+        }
+        #reportTable.official-mode td{
+            border:1px solid #000 !important; color:#000 !important;
+        }
+
+        /* ---- Top bar ---- */
+        .moby-topbar{
+            display:flex; align-items:center; gap:12px;
+            padding:14px 18px; background:#fff;
+            position:sticky; top:0; z-index:30;
+            box-shadow:0 1px 0 rgba(0,0,0,0.06);
+        }
+        .back-btn{
+            display:flex; align-items:center; justify-content:center;
+            width:38px; height:38px; border-radius:50%;
+            background:var(--moby-green-light); color:var(--moby-green-dark);
+            text-decoration:none; font-size:20px; flex-shrink:0;
+        }
+        .back-btn:hover{ background:#d3f1e3; }
+        .moby-topbar h1{ font-size:1.05rem; font-weight:700; margin:0; }
+        .moby-topbar .sub{ font-size:0.75rem; color:var(--moby-muted); margin:0; }
+
+        .container{ max-width:900px; margin:0 auto; padding:20px 16px 0; }
+
+        .hero-card{
+            background:linear-gradient(135deg, var(--moby-green), var(--moby-green-dark));
+            border-radius:18px; padding:22px; color:#fff; margin-bottom:18px;
+        }
+        .hero-card .eyebrow{
+            display:inline-block; background:rgba(255,255,255,0.18);
+            padding:4px 12px; border-radius:20px; font-size:0.68rem;
+            font-weight:700; letter-spacing:0.03em; margin-bottom:8px;
+        }
+        .hero-card h2{ font-size:1.3rem; font-weight:800; margin:0 0 6px; }
+        .hero-card p{ margin:0; font-size:0.85rem; opacity:0.92; }
+
+        .moby-card{
+            background:#fff; border-radius:14px; padding:18px;
+            box-shadow:0 4px 14px rgba(16,40,34,0.06); margin-bottom:16px;
+        }
+        .moby-card h5{
+            font-size:0.95rem; font-weight:700; margin:0 0 14px;
+            display:flex; align-items:center; gap:8px;
+        }
+        .badge-num{
+            display:inline-flex; align-items:center; justify-content:center;
+            width:22px; height:22px; border-radius:50%;
+            background:var(--moby-green-light); color:var(--moby-green-dark);
+            font-size:0.72rem; font-weight:800; flex-shrink:0;
+        }
+
+        label.field-label{
+            font-size:0.78rem; font-weight:700; color:var(--moby-muted);
+            margin-bottom:6px; display:block;
+        }
+        .form-control, select.form-control{
+            width:100%; border:1.5px solid #e3ebe8; border-radius:10px;
+            padding:10px 12px; font-size:0.88rem; margin-bottom:10px;
+            background:#fafcfb; color:var(--moby-text); outline:none;
+        }
+        .form-control:focus{ border-color:var(--moby-green); background:#fff; }
+        .grid-2{ display:grid; grid-template-columns:1fr; gap:12px; }
+        @media(min-width:640px){ .grid-2{ grid-template-columns:1fr 1fr; } }
+
+        .btn-moby{
+            border:none; border-radius:10px; padding:10px 16px;
+            font-size:0.85rem; font-weight:700; cursor:pointer;
+        }
+        .btn-outline{ background:var(--moby-green-light); color:var(--moby-green-dark); }
+        .btn-outline:hover{ background:#d3f1e3; }
+        .btn-main{
+            background:var(--moby-green); color:#fff; width:100%; padding:13px;
+            font-size:0.95rem; box-shadow:0 6px 16px rgba(15,174,114,0.35);
+        }
+        .btn-main:hover{ background:var(--moby-green-dark); }
+        .btn-danger{ background:var(--moby-danger); color:#fff; }
+        .btn-blue{ background:#2563eb; color:#fff; }
+        .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+        .btn-row .btn-moby{ flex:1; min-width:140px; }
+
+        /* ---- Mic / speech section ---- */
+        .mic-section{
+            display:flex; gap:14px; align-items:center;
+            background:var(--moby-green-light); padding:12px; border-radius:12px;
+        }
+        .mic-btn{
+            background:var(--moby-danger); color:#fff; border:none; border-radius:50%;
+            cursor:pointer; font-size:18px; width:50px; height:50px;
+            display:flex; align-items:center; justify-content:center; flex-shrink:0;
+            transition:.3s;
+        }
+        .mic-btn.recording{ background:var(--moby-green); animation:pulse 1.2s infinite; }
+        @keyframes pulse{
+            0%{ box-shadow:0 0 0 0 rgba(15,174,114,.4); }
+            70%{ box-shadow:0 0 0 10px rgba(15,174,114,0); }
+            100%{ box-shadow:0 0 0 0 rgba(15,174,114,0); }
+        }
+        .wave-container{ display:flex; align-items:center; gap:3px; height:25px; flex-grow:1; visibility:hidden; }
+        .wave-container.active{ visibility:visible; }
+        .wave-bar{ width:4px; background:var(--moby-green); border-radius:2px; animation:soundWave .5s infinite ease-in-out alternate; }
+        .wave-bar:nth-child(2){ animation-delay:.1s; } .wave-bar:nth-child(3){ animation-delay:.2s; }
+        .wave-bar:nth-child(4){ animation-delay:.3s; } .wave-bar:nth-child(5){ animation-delay:.4s; }
+        .wave-bar:nth-child(6){ animation-delay:.15s; } .wave-bar:nth-child(7){ animation-delay:.25s; }
+        @keyframes soundWave{ 0%{ height:5px; } 100%{ height:25px; } }
+        .mic-status{ font-size:0.78rem; color:var(--moby-muted); }
+
+        /* ---- Grading scale rows ---- */
+        .grade-row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+        .grade-row input{
+            border:1.5px solid #e3ebe8; border-radius:8px; padding:8px; font-size:0.85rem;
+            background:#fafcfb;
+        }
+        .grade-row .g-min, .grade-row .g-max{ width:70px; text-align:center; }
+        .grade-row .g-letter{ width:60px; text-align:center; font-weight:700; }
+        .grade-row button{
+            background:none; border:none; color:var(--moby-danger); font-weight:700;
+            font-size:1rem; cursor:pointer; margin-left:auto;
+        }
+
+        /* ---- Paper / table preview ---- */
+        .paper-preview{
+            border:2px dashed #cbd5e1; padding:15px; margin-top:6px;
+            border-radius:10px; background:#ffffff;
+        }
+        table{ width:100%; border-collapse:collapse; margin-top:10px; background:#fff; font-size:0.78rem; }
+        th, td{ border:1px solid #cbd5e1; padding:8px; text-align:center; }
+        th{ background:#0fae72; color:#fff; }
+        td[contenteditable="true"]{ min-width:70px; }
+        .del-btn{
+            padding:3px 8px; font-size:0.7rem; background:#e0524a; color:#fff;
+            border:none; border-radius:6px; cursor:pointer;
+        }
+        .auto-cell{ background:#f0f4f3 !important; color:var(--moby-muted); font-weight:700; }
+        .add-col-row{ display:flex; gap:8px; margin-top:14px; }
+        .add-col-row input{ margin-bottom:0; flex:1; }
+        .add-col-row button{ white-space:nowrap; }
+        .col-del{
+            cursor:pointer; margin-left:6px; opacity:0.8; font-weight:400;
+        }
+        .col-del:hover{ opacity:1; }
+        .voice-preview{ background:var(--moby-green-light); padding:12px; border-radius:12px; margin-top:12px; }
+        .voice-preview .field-label{ margin-bottom:3px; }
+
+        .helper-text{ font-size:0.76rem; color:var(--moby-muted); margin:-4px 0 10px; }
+        code.inline{ background:#f0f4f3; padding:1px 6px; border-radius:5px; font-size:0.76rem; }
+
+        /* ---- Preview Modal ---- */
+        #previewModal{
+            display:none; position:fixed; inset:0; z-index:100;
+            background:rgba(15,25,23,0.65); padding:16px;
+            overflow-y:auto;
+        }
+        #previewModal.open{ display:block; }
+        .preview-modal-inner{
+            background:#fff; max-width:1000px; margin:0 auto; border-radius:14px;
+            padding:18px; position:relative;
+        }
+        .preview-modal-topbar{
+            display:flex; justify-content:space-between; align-items:center;
+            gap:10px; margin-bottom:14px; flex-wrap:wrap;
+        }
+        .preview-modal-topbar h5{ margin:0; font-size:1rem; font-weight:800; }
+        #previewTableWrap{ overflow-x:auto; }
+        #previewTableWrap table{ width:100%; border-collapse:collapse; font-size:0.8rem; }
+        #previewTableWrap th, #previewTableWrap td{ border:1px solid #000; padding:8px; text-align:center; color:#000; }
+        #previewTableWrap th{ background:#fff; font-weight:700; }
+
+        /* ---- Rename-before-download modal ---- */
+        #renameModal{
+            display:none; position:fixed; inset:0; z-index:200;
+            background:rgba(15,25,23,0.65); align-items:center; justify-content:center; padding:16px;
+        }
+        #renameModal.open{ display:flex; }
+        .rename-modal-inner{
+            background:#fff; width:100%; max-width:420px; border-radius:14px; padding:20px;
+        }
+        .rename-modal-inner h5{ margin:0 0 12px; font-size:1rem; font-weight:800; }
+    </style>
+</head>
+<body>
+
+    <!-- Moby Top Bar -->
+    <div class="moby-topbar no-print">
+        <a href="https://mickster19.github.io/Moby/" class="back-btn" title="Rudi Home">&#8592;</a>
+        <div>
+            <h1 data-i18n="appTitle">Academic Report & Speech Generator</h1>
+            <p class="sub" data-i18n="appSub">Moby &middot; Ofisi ya Mwalimu</p>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <div id="expiryWarning" class="no-print" style="display:none; background:#fff4e5; border:1.5px solid #f0b429; color:#8a5a00; padding:12px 16px; border-radius:12px; margin-bottom:14px; font-size:0.85rem; font-weight:600;"></div>
+
+        <div class="hero-card no-print">
+            <span class="eyebrow" data-i18n="heroEyebrow">SPEECH-TO-TABLE REPORT</span>
+            <h2 data-i18n="heroTitle">Tengeneza Jedwali la Matokeo kwa Sauti</h2>
+            <p data-i18n="heroBody">Andaa columns na madaraja, kisha jaza taarifa kwa kuongea au kuandika moja kwa moja kwenye jedwali.</p>
+        </div>
+
+        <!-- 1. Taarifa za Msingi -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">1</span> <span data-i18n="step1Title">Taarifa za Msingi</span></h5>
+            <div>
+                <label class="field-label" data-i18n="langLabel">Lugha / Language</label>
+                <select id="voiceLang" class="form-control" onchange="applyLanguage()">
+                    <option value="sw-TZ">Kiswahili</option>
+                    <option value="en-US">English</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 2. Heading ya Ripoti -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">2</span> <span data-i18n="headingTitle">Heading ya Ripoti</span></h5>
+            <p class="helper-text" data-i18n="headingHelp">Jaza taarifa hizi ili zionekane juu ya jedwali litakalosaviwa (PDF/Excel).</p>
+            <div class="grid-2">
+                <div>
+                    <label class="field-label" data-i18n="schoolLabel">Jina la Shule</label>
+                    <input type="text" id="hdgSchool" class="form-control" oninput="updateHeadingPreview()" placeholder="Mfano: Shule ya Msingi Kajange">
+                </div>
+                <div>
+                    <label class="field-label" data-i18n="reportTitleLabel">Kichwa cha Ripoti</label>
+                    <input type="text" id="hdgTitle" class="form-control" oninput="updateHeadingPreview()" placeholder="Mfano: Matokeo ya Mtihani wa Mwisho wa Muhula">
+                </div>
+                <div>
+                    <label class="field-label" data-i18n="classLabel">Darasa / Kidato</label>
+                    <input type="text" id="hdgClass" class="form-control" oninput="updateHeadingPreview()" placeholder="Mfano: Darasa la Sita">
+                </div>
+                <div>
+                    <label class="field-label" data-i18n="termLabel">Muhula / Mwaka</label>
+                    <input type="text" id="hdgTerm" class="form-control" oninput="updateHeadingPreview()" placeholder="Mfano: Muhula wa Kwanza, 2026">
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Columns za Jedwali -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">3</span> <span data-i18n="step2Title">Columns za Jedwali</span></h5>
+
+            <label class="field-label">Column za Kawaida (mtumiaji anajaza mwenyewe)</label>
+            <div class="add-col-row">
+                <input type="text" id="newColumnInput" class="form-control" placeholder="Mfano: Jina la Mwanafunzi" onkeydown="if(event.key==='Enter'){event.preventDefault(); addSingleColumn();}">
+                <button class="btn-moby btn-outline" onclick="addSingleColumn()">&#10133; Ongeza Column</button>
+            </div>
+
+            <label class="field-label" style="margin-top:16px;">Column za Auto (hiyari &mdash; tick unazozitaka)</label>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+                    <input type="checkbox" id="autoJumla" onchange="toggleAutoColumn('Jumla', this.checked)">
+                    <span><b>Jumla</b> &mdash; jumla ya alama, inakokotolewa kiotomatiki</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+                    <input type="checkbox" id="autoWastani" onchange="toggleAutoColumn('Wastani', this.checked)">
+                    <span><b>Wastani</b> &mdash; wastani wa alama, inakokotolewa kiotomatiki</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+                    <input type="checkbox" id="autoJinsia" onchange="toggleAutoColumn('Jinsia', this.checked)">
+                    <span><b>Jinsia</b> &mdash; chaguo la Me/Ke</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+                    <input type="checkbox" id="autoGrade" onchange="toggleAutoColumn('Grade', this.checked)">
+                    <span><b>Grade</b> &mdash; hiyari, inajazwa kiotomatiki kwa Mfumo wa Madaraja (Hatua ya 3)</span>
+                </label>
+            </div>
+            <p class="helper-text" style="margin-top:10px;">
+                Hizi zote ni <b>hiyari</b> &mdash; ukiacha bila tick, hakuna tatizo, kila kitu kingine kitaendelea kufanya kazi kama kawaida.
+                Bofya <b>&times;</b> juu ya jina la column kwenye jedwali kuifuta wakati wowote.
+            </p>
+        </div>
+
+        <!-- 4. Mfumo wa Madaraja -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">4</span> <span data-i18n="step3Title">Mfumo wa Madaraja (Grading Scale)</span></h5>
+            <p class="helper-text" data-i18n="gradeHelp">Weka viwango vya alama, mfano: <code class="inline">41-50 = A</code>, <code class="inline">31-40 = B</code>...</p>
+            <div id="gradeScaleRows"></div>
+            <div class="btn-row" style="margin-top:6px;">
+                <button class="btn-moby btn-outline" onclick="addGradeRow()" data-i18n="addGradeBtn">+ Ongeza Daraja</button>
+                <button class="btn-moby btn-outline" onclick="computeGrades()" data-i18n="computeGradeBtn">&#128202; Kokotoa Madaraja</button>
+            </div>
+        </div>
+
+        <!-- 5. Ingiza kwa Sauti -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">5</span> <span data-i18n="step4Title">Ingiza Taarifa kwa Sauti</span></h5>
+            <div class="mic-section">
+                <button type="button" id="micBtn" class="mic-btn" onclick="toggleSpeechRecognition()">&#127908;</button>
+                <div id="waveContainer" class="wave-container">
+                    <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                    <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                </div>
+                <span id="micStatus" class="mic-status"></span>
+            </div>
+
+            <div id="voicePreview" class="voice-preview" style="display:none;">
+                <p class="helper-text" style="margin:0 0 8px;" data-i18n="voicePreviewHelp">Angalia uliyoyaongea, hariri kama kuna makosa, kisha thibitisha:</p>
+                <div id="voicePreviewFields" style="display:flex; flex-direction:column; gap:6px;"></div>
+                <div class="btn-row" style="margin-top:10px;">
+                    <button class="btn-moby" style="background:#16a34a;color:#fff;" onclick="confirmVoiceRow()" data-i18n="confirmRowBtn">&#9989; Ongeza kwenye Jedwali</button>
+                    <button class="btn-moby btn-outline" onclick="retryListening()" data-i18n="retryBtn">&#128260; Sikiliza Tena</button>
+                    <button class="btn-moby btn-danger" onclick="cancelVoicePreview()" data-i18n="cancelBtn">&#10005; Ghairi</button>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top:10px;">
+                <button class="btn-moby btn-outline" onclick="addRow()" data-i18n="addEmptyRowBtn">&#10133; Ongeza Mstari Mtupu</button>
+            </div>
+        </div>
+
+        <!-- 6. Preview ya Jedwali -->
+        <div class="moby-card">
+            <h5><span class="badge-num">6</span> <span data-i18n="step5Title">Ripoti ya Matokeo ya Mwanafunzi</span></h5>
+            <div id="paperContainer" class="paper-preview">
+                <div id="reportHeading" style="text-align:center; margin-bottom:12px; display:none;">
+                    <div id="hdgSchoolOut" style="font-size:1.1rem; font-weight:800; text-transform:uppercase;"></div>
+                    <div id="hdgTitleOut" style="font-size:0.95rem; font-weight:700; margin-top:2px;"></div>
+                    <div id="hdgSubOut" style="font-size:0.8rem; color:var(--moby-muted); margin-top:2px;"></div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table id="reportTable">
+                        <thead><tr id="headerRow"></tr></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. Vitufe vya Kutoa -->
+        <div class="moby-card no-print">
+            <h5><span class="badge-num">7</span> <span data-i18n="step6Title">Preview & Save</span></h5>
+            <div class="btn-row">
+                <button class="btn-moby btn-blue" onclick="previewReport()" data-i18n="previewBtn">&#128065; Preview</button>
+                <button class="btn-moby btn-danger" onclick="savePDF()" id="pdfBtn" data-i18n="savePdfBtn">&#128190; Save PDF</button>
+                <button class="btn-moby" style="background:#16a34a;color:#fff;" onclick="saveExcel()" data-i18n="saveExcelBtn">&#128202; Save Excel</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="no-print">
+        <div class="preview-modal-inner">
+            <div class="preview-modal-topbar">
+                <h5 data-i18n="previewModalTitle">Preview ya Ripoti</h5>
+                <div class="btn-row" style="margin:0;">
+                    <button class="btn-moby btn-danger" style="min-width:auto;" onclick="savePDF()" id="pdfBtnModal" data-i18n="savePdfBtn">&#128190; Save PDF</button>
+                    <button class="btn-moby btn-outline" style="min-width:auto;" onclick="closePreviewModal()" data-i18n="closeBtn">&#10005; Funga</button>
+                </div>
+            </div>
+            <div id="previewTableWrap"></div>
+        </div>
+    </div>
+
+    <!-- Rename-before-download Modal -->
+    <div id="renameModal" class="no-print">
+        <div class="rename-modal-inner">
+            <h5 data-i18n="renameModalTitle">Jina la Faili</h5>
+            <label class="field-label" data-i18n="renameModalHelp">Badilisha jina kama unavyotaka, kisha pakua:</label>
+            <input type="text" id="renameInput" class="form-control">
+            <div class="btn-row" style="margin-top:6px;">
+                <button class="btn-moby" style="background:#16a34a;color:#fff;" id="renameConfirmBtn" data-i18n="downloadBtn">&#11015; Pakua</button>
+                <button class="btn-moby btn-outline" onclick="closeRenameModal()" data-i18n="cancelBtn">&#10005; Ghairi</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let currentColumns = [];
+
+    // ============ FIREBASE SETUP ============
+    const firebaseConfig = {
+        apiKey: "AIzaSyBXLW5Vq7dbpxh750DGCIia-camkIiJ1S8",
+        authDomain: "moby-42aca.firebaseapp.com",
+        databaseURL: "https://moby-42aca-default-rtdb.firebaseio.com",
+        projectId: "moby-42aca",
+        storageBucket: "moby-42aca.firebasestorage.app",
+        messagingSenderId: "170893692184",
+        appId: "1:170893692184:web:1ea7276b746260789da26d",
+        measurementId: "G-8VQR2W9EGM"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const EXPIRY_DAYS = 14;
+    const WARNING_AT_DAYS_LEFT = 3;
+    const DEVICE_ID_KEY = 'moby_device_id';
+
+    // Kila kifaa kinapata ID ya nasibu, ihifadhiwe kifaa chenyewe - hakuna login.
+    // Hii ID ndiyo "njia" (path) ya data ya mtumiaji huyu kwenye Firebase.
+    function getDeviceId() {
+        let id = localStorage.getItem(DEVICE_ID_KEY);
+        if (!id) {
+            id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+            localStorage.setItem(DEVICE_ID_KEY, id);
+        }
+        return id;
+    }
+    const deviceId = getDeviceId();
+    const dataRef = db.ref('mobyReports/' + deviceId);
+
+    let saveDebounceTimer = null;
+    let suppressAutoSave = false; // true wakati tunaload data - tusijisave upya mara moja
+
+    // Kusanya state nzima ya fomu kwa ajili ya kuhifadhi
+    function collectState() {
+        const heading = {
+            school: (document.getElementById('hdgSchool') || {}).value || '',
+            title: (document.getElementById('hdgTitle') || {}).value || '',
+            klass: (document.getElementById('hdgClass') || {}).value || '',
+            term: (document.getElementById('hdgTerm') || {}).value || ''
+        };
+        const lang = (document.getElementById('voiceLang') || {}).value || 'sw-TZ';
+
+        const gradeScale = Array.from(document.querySelectorAll('#gradeScaleRows .grade-row')).map(r => ({
+            min: r.querySelector('.g-min').value,
+            max: r.querySelector('.g-max').value,
+            letter: r.querySelector('.g-letter').value
+        }));
+
+        const rows = Array.from(document.querySelectorAll('#tableBody tr')).map(row => {
+            return currentColumns.map((col, idx) => {
+                const cell = row.cells[1 + idx];
+                if (!cell) return '';
+                const select = cell.querySelector('select');
+                if (select) return select.value;
+                return cell.innerText;
+            });
+        });
+
+        return {
+            heading, lang, columns: currentColumns.slice(), gradeScale, rows,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP
+        };
+    }
+
+    // Rudisha fomu kutoka state iliyohifadhiwa
+    function applyState(state) {
+        if (!state) return;
+        suppressAutoSave = true;
+        try {
+            if (state.heading) {
+                if (document.getElementById('hdgSchool')) document.getElementById('hdgSchool').value = state.heading.school || '';
+                if (document.getElementById('hdgTitle')) document.getElementById('hdgTitle').value = state.heading.title || '';
+                if (document.getElementById('hdgClass')) document.getElementById('hdgClass').value = state.heading.klass || '';
+                if (document.getElementById('hdgTerm')) document.getElementById('hdgTerm').value = state.heading.term || '';
+                if (typeof updateHeadingPreview === 'function') updateHeadingPreview();
+            }
+            if (state.lang && document.getElementById('voiceLang')) {
+                document.getElementById('voiceLang').value = state.lang;
+                applyLanguage();
+            }
+
+            document.getElementById('gradeScaleRows').innerHTML = '';
+            if (state.gradeScale && state.gradeScale.length) {
+                state.gradeScale.forEach(g => addGradeRow(g.min, g.max, g.letter));
+            } else {
+                addGradeRow(41, 50, 'A'); addGradeRow(31, 40, 'B'); addGradeRow(21, 30, 'C'); addGradeRow(11, 20, 'D'); addGradeRow(0, 10, 'E');
+            }
+
+            currentColumns = (state.columns || []).slice();
+            buildHeader();
+            document.getElementById('tableBody').innerHTML = '';
+            (state.rows || []).forEach(r => addRow(r));
+
+            syncAutoCheckboxes();
+            updateMicHint();
+            recalcAllRows();
+        } finally {
+            suppressAutoSave = false;
+        }
+    }
+
+    function saveStateNow() {
+        if (suppressAutoSave) return;
+        dataRef.set(collectState()).catch(err => console.error('Firebase save error:', err));
+    }
+
+    // Debounce - usisave kwa kila herufi, subiri mtumiaji aache kuandika kidogo
+    function scheduleSave() {
+        if (suppressAutoSave) return;
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = setTimeout(saveStateNow, 600);
+    }
+
+    function showExpiryWarning(daysLeft) {
+        const el = document.getElementById('expiryWarning');
+        const isEn = document.getElementById('voiceLang') && document.getElementById('voiceLang').value === 'en-US';
+        el.style.display = 'block';
+        el.innerHTML = isEn
+            ? `&#9888; Your saved data will be deleted in ${daysLeft} day(s). Export it (PDF/Excel) if you want to keep it.`
+            : `&#9888; Taarifa zako zilizohifadhiwa zitafutika baada ya siku ${daysLeft}. Save PDF/Excel kama unataka kuzitunza.`;
+    }
+
+    function deleteRemoteData() {
+        return dataRef.remove().catch(err => console.error('Firebase delete error:', err));
+    }
+
+    // Pakia data kutoka Firebase mwanzoni. Kama ina zaidi ya siku 14, ifute
+    // (Firebase pia). Kama zimebaki siku 3 au chini, onyesha warning.
+    function loadInitialState() {
+        dataRef.get().then(snapshot => {
+            if (!snapshot.exists()) return;
+            const state = snapshot.val();
+            const updatedAt = state.updatedAt || 0;
+            const ageMs = Date.now() - updatedAt;
+            const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+            if (ageDays >= EXPIRY_DAYS) {
+                deleteRemoteData();
+                return; // fomu inabaki tupu / default
+            }
+
+            const daysLeft = Math.ceil(EXPIRY_DAYS - ageDays);
+            if (daysLeft <= WARNING_AT_DAYS_LEFT) {
+                showExpiryWarning(daysLeft);
+            }
+
+            applyState(state);
+        }).catch(err => console.error('Firebase load error:', err));
+    }
+
+    // Weka "listener" kwenye fomu nzima ili kila mabadiliko yajisave papo hapo
+    function attachAutoSaveListeners() {
+        const container = document.querySelector('.container');
+        container.addEventListener('input', scheduleSave);
+        container.addEventListener('change', scheduleSave);
+        container.addEventListener('click', function (e) {
+            // Vitufe vinavyobadilisha structure (ongeza/futa row/column/grade) - save baada ya kitendo
+            if (e.target.closest('button, .col-del, .del-btn')) {
+                setTimeout(scheduleSave, 50);
+            }
+        });
+    }
+
+
+    // ============ LANGUAGE (i18n) ============
+    const I18N = {
+        'sw-TZ': {
+            appTitle: 'Academic Report & Speech Generator',
+            appSub: 'Moby &middot; Ofisi ya Mwalimu',
+            heroEyebrow: 'SPEECH-TO-TABLE REPORT',
+            heroTitle: 'Tengeneza Jedwali la Matokeo kwa Sauti',
+            heroBody: 'Andaa columns na madaraja, kisha jaza taarifa kwa kuongea au kuandika moja kwa moja kwenye jedwali.',
+            step1Title: 'Taarifa za Msingi',
+            langLabel: 'Lugha / Language',
+            headingTitle: 'Heading ya Ripoti',
+            headingHelp: 'Jaza taarifa hizi ili zionekane juu ya jedwali litakalosaviwa (PDF/Excel).',
+            schoolLabel: 'Jina la Shule',
+            reportTitleLabel: 'Kichwa cha Ripoti',
+            classLabel: 'Darasa / Kidato',
+            termLabel: 'Muhula / Mwaka',
+            step2Title: 'Columns za Jedwali',
+            step3Title: 'Mfumo wa Madaraja (Grading Scale)',
+            gradeHelp: 'Weka viwango vya alama, mfano: <code class="inline">41-50 = A</code>, <code class="inline">31-40 = B</code>...',
+            addGradeBtn: '+ Ongeza Daraja',
+            computeGradeBtn: '&#128202; Kokotoa Madaraja',
+            step4Title: 'Ingiza Taarifa kwa Sauti',
+            voicePreviewHelp: 'Angalia uliyoyaongea, hariri kama kuna makosa, kisha thibitisha:',
+            confirmRowBtn: '&#9989; Ongeza kwenye Jedwali',
+            retryBtn: '&#128260; Sikiliza Tena',
+            cancelBtn: '&#10005; Ghairi',
+            addEmptyRowBtn: '&#10133; Ongeza Mstari Mtupu',
+            step5Title: 'Ripoti ya Matokeo ya Mwanafunzi',
+            step6Title: 'Preview & Save',
+            previewBtn: '&#128065; Preview',
+            savePdfBtn: '&#128190; Save PDF',
+            saveExcelBtn: '&#128202; Save Excel',
+            micHintPrefix: 'Bonyeza maiki na useme kwa mpangilio huu',
+            listening: 'Inasikiliza... ongea taarifa za mwanafunzi.',
+            youSaid: 'Ulichosema: ',
+            micError: 'Hitilafu imetokea, jaribu tena.',
+            rowAdded: '&#9989; Imeongezwa kwenye jedwali.',
+            noSpeechSupport: 'Samahani, kivinjari chako hakiauni kipengele cha Speech-to-Text.',
+            noColumnName: 'Andika au chagua jina la column kwanza!',
+            columnExists: 'Column yenye jina hilo tayari ipo!',
+            confirmDeleteCol: 'Una uhakika unataka kufuta column',
+            noGradeColumn: 'Hakuna column ya "Grade" au "Daraja" kwenye jedwali lako. Ongeza kwenye Hatua ya 3.',
+            noMarksColumn: 'Hakuna column za alama (namba) kwenye jedwali.',
+            noGradeScale: 'Weka kwanza viwango vya daraja (Hatua ya 4)!',
+            generatingPdf: 'Inatengeneza PDF...',
+            previewModalTitle: 'Preview ya Ripoti',
+            closeBtn: '&#10005; Funga',
+            pdfError: 'Imeshindikana kutengeneza PDF. Jaribu tena, au hakikisha una intaneti nzuri.',
+            renameModalTitle: 'Jina la Faili',
+            renameModalHelp: 'Badilisha jina kama unavyotaka, kisha pakua:',
+            downloadBtn: '&#11015; Pakua'
+        },
+        'en-US': {
+            appTitle: 'Academic Report & Speech Generator',
+            appSub: 'Moby &middot; Teacher\u2019s Office',
+            heroEyebrow: 'SPEECH-TO-TABLE REPORT',
+            heroTitle: 'Build a Results Table by Voice',
+            heroBody: 'Set up columns and grades, then fill in details by speaking or typing directly into the table.',
+            step1Title: 'Basic Information',
+            langLabel: 'Language / Lugha',
+            headingTitle: 'Report Heading',
+            headingHelp: 'Fill this in so it appears above the table when saved (PDF/Excel).',
+            schoolLabel: 'School Name',
+            reportTitleLabel: 'Report Title',
+            classLabel: 'Class / Grade Level',
+            termLabel: 'Term / Year',
+            step2Title: 'Table Columns',
+            step3Title: 'Grading Scale',
+            gradeHelp: 'Set score ranges, e.g. <code class="inline">41-50 = A</code>, <code class="inline">31-40 = B</code>...',
+            addGradeBtn: '+ Add Grade',
+            computeGradeBtn: '&#128202; Compute Grades',
+            step4Title: 'Enter Details by Voice',
+            voicePreviewHelp: 'Check what you said, edit if there are mistakes, then confirm:',
+            confirmRowBtn: '&#9989; Add to Table',
+            retryBtn: '&#128260; Listen Again',
+            cancelBtn: '&#10005; Cancel',
+            addEmptyRowBtn: '&#10133; Add Empty Row',
+            step5Title: 'Student Results Report',
+            step6Title: 'Preview & Save',
+            previewBtn: '&#128065; Preview',
+            savePdfBtn: '&#128190; Save PDF',
+            saveExcelBtn: '&#128202; Save Excel',
+            micHintPrefix: 'Press the mic and speak in this order',
+            listening: 'Listening... speak the student details.',
+            youSaid: 'You said: ',
+            micError: 'An error occurred, try again.',
+            rowAdded: '&#9989; Added to the table.',
+            noSpeechSupport: 'Sorry, your browser does not support Speech-to-Text.',
+            noColumnName: 'Type or choose a column name first!',
+            columnExists: 'A column with that name already exists!',
+            confirmDeleteCol: 'Are you sure you want to delete the column',
+            noGradeColumn: 'No "Grade" column found in the table. Add it in Step 3.',
+            noMarksColumn: 'No numeric (marks) columns found in the table.',
+            noGradeScale: 'Please set the grading scale first (Step 4)!',
+            generatingPdf: 'Generating PDF...',
+            previewModalTitle: 'Report Preview',
+            closeBtn: '&#10005; Close',
+            pdfError: 'Failed to generate PDF. Please try again, or check your internet connection.',
+            renameModalTitle: 'File Name',
+            renameModalHelp: 'Change the name if you like, then download:',
+            downloadBtn: '&#11015; Download'
+        }
+    };
+
+    function t(key) {
+        const lang = document.getElementById('voiceLang').value;
+        return (I18N[lang] && I18N[lang][key]) || I18N['sw-TZ'][key] || key;
+    }
+
+    function applyLanguage() {
+        const lang = document.getElementById('voiceLang').value;
+        document.documentElement.lang = lang === 'en-US' ? 'en' : 'sw';
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            el.innerHTML = t(key);
+        });
+        buildHeader();
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            const delBtn = row.querySelector('.del-btn');
+            if (delBtn) delBtn.innerText = lang === 'en-US' ? 'Delete' : 'Futa';
+            const genderSelect = row.querySelector('select');
+            if (genderSelect) {
+                const opts = genderSelect.options;
+                if (opts.length === 3) {
+                    opts[1].text = lang === 'en-US' ? 'M' : 'Me';
+                    opts[2].text = lang === 'en-US' ? 'F' : 'Ke';
+                }
+            }
+        });
+        updateMicHint();
+        updateHeadingPreview();
+    }
+
+    // ============ JINSIA KUTOKA JINA (AUTO GENDER FROM NAME) ============
+    // Majina ya kawaida ya Kitanzania/Kiafrika Mashariki - kiume na kike.
+    // Hii ni orodha ya msingi; kama jina halijulikani, mtumiaji anaweza
+    // kuchagua Me/Ke mwenyewe kwenye dropdown (haijazuiliwa).
+    const MALE_NAMES = ['baraka','emmanuel','emanuel','john','joseph','yosefu','peter','petro','paul','paulo','daniel','danieli','david','daudi','michael','mikaeli','samuel','samweli','james','jacob','yakobo','andrew','andrea','frank','francis','fransisko','edward','eduard','richard','robert','roberti','thomas','tomasi','stephen','stephano','philip','filipo','simon','simoni','nicholas','nikolasi','charles','karoli','godfrey','godfrey','goodluck','ally','ali','hassan','hussein','husein','said','saidi','salum','salim','iddi','idi','juma','ramadhani','ramadhan','mussa','musa','ibrahim','abdallah','abdala','athumani','athuman','omary','omar','rashid','rashidi','yusuf','yusufu','abasi','abbas','shabani','mohamed','mohammed','mussa','issa','kelvin','kevin','brian','bryan','eric','erick','erick','victor','victo','gerald','gerald','elias','eliya','erasto','method','mathayo','matthew','marko','mark','luka','luke','zakayo','zacharia','zachary','deo','deodatus','festo','felix','felician','felisiani','clement','klementi','anthony','antony','antoni','christopher','kristofa','isaac','isaka','jeremiah','yeremia','jonathan','yonathani','moses','musa','solomon','suleiman','abel','abeli','cain','kaini','noah','nuhu','joshua','yoshua','caleb','kalebu','benjamin','benjamini','reuben','rubeni','gideon','gedeon','samson','samsoni','elisha','elisa','ezekiel','ezekieli','job','ayubu','malaki','habakuki','hosea','amosi','amos','yona','jonah','micha','micah'];
+    const FEMALE_NAMES = ['mary','maria','anna','ana','grace','neema','faith','imani','joyce','furaha','jane','jenny','esther','esta','ruth','ruthi','sarah','sara','rachel','raheli','rebecca','rebeka','elizabeth','elizabeti','elisabeti','beatrice','beatrisi','agnes','agnesi','angela','anjela','catherine','katarina','christina','kristina','dorothy','doroth','doris','edna','emily','emili','florence','florens','irene','ireni','janet','janeti','jessica','jesika','judith','judith','julia','julius','julieth','lucy','lusi','margaret','margareti','martha','martha','mercy','rehema','monica','monika','nancy','nasi','patricia','patrisia','paulina','priscilla','prisila','rosemary','rozi','susan','susana','theresa','tereza','victoria','victoria','vivian','viviani','winifred','winnie','zainab','zaituni','zaitun','fatuma','fatma','halima','hadija','khadija','mwajuma','mwanaidi','mwanahawa','tatu','pili','sabina','veronica','veronika','stella','stela','consolata','consolatha','regina','rejina','flora','flora','gloria','glory','happiness','furaha','upendo','love','blessing','baraka','faraja','comfort','janeth','sharon','sharoni','diana','diana','christine','kristine','irene','asha','amina','salma','zawadi','tumaini','hope','pendo','neema'];
+
+    function guessGenderFromName(fullName) {
+        if (!fullName) return '';
+        const firstName = fullName.trim().split(/\s+/)[0].toLowerCase();
+        if (MALE_NAMES.includes(firstName)) return 'Me';
+        if (FEMALE_NAMES.includes(firstName)) return 'Ke';
+        return '';
+    }
+
+    // ============ HEADING YA RIPOTI (inaonekana kwenye jedwali + PDF) ============
+    function updateHeadingPreview() {
+        const school = document.getElementById('hdgSchool').value.trim();
+        const title = document.getElementById('hdgTitle').value.trim();
+        const klass = document.getElementById('hdgClass').value.trim();
+        const term = document.getElementById('hdgTerm').value.trim();
+        const wrap = document.getElementById('reportHeading');
+
+        if (!school && !title && !klass && !term) {
+            wrap.style.display = 'none';
+            return;
+        }
+        wrap.style.display = 'block';
+        document.getElementById('hdgSchoolOut').innerText = school;
+        document.getElementById('hdgTitleOut').innerText = title;
+        const subParts = [klass, term].filter(Boolean);
+        document.getElementById('hdgSubOut').innerText = subParts.join('  |  ');
+    }
+
+    // ============ COLUMNS ============
+    function classifyColumns(cols) {
+        return cols.map(c => {
+            const l = c.toLowerCase();
+            if (/(jumla|total|jumla ya alama)/.test(l)) return 'total';
+            if (/(wastani|average|mean)/.test(l)) return 'average';
+            if (/(position|nafasi|rank)/.test(l)) return 'position';
+            if (/(grade|daraja)/.test(l)) return 'grade';
+            if (/(jina|name)/.test(l)) return 'name';
+            if (/(jinsia|gender|jinsi)/.test(l)) return 'gender';
+            if (/(namba|no\.|prem|admission|reg)/.test(l)) return 'id';
+            return 'marks';
+        });
+    }
+
+    // ============ AUTO-COMPUTE: JUMLA (TOTAL), WASTANI (AVERAGE) & GRADE ============
+    // Hii inafanya kazi yenyewe: kama columns za Jumla/Wastani/Grade zipo,
+    // zinajazwa kiotomatiki. Kama hazipo, kazi hii haifanyi kitu - hakuna shida.
+    function recalcRow(row) {
+        const roles = classifyColumns(currentColumns);
+        const totalIdx = roles.indexOf('total');
+        const avgIdx = roles.indexOf('average');
+        const gradeIdx = roles.indexOf('grade');
+        if (totalIdx === -1 && avgIdx === -1 && gradeIdx === -1) return;
+
+        const marksIdxs = roles.map((r, i) => r === 'marks' ? i : -1).filter(i => i !== -1);
+        let total = 0, count = 0;
+        marksIdxs.forEach(ci => {
+            const cell = row.cells[1 + ci];
+            const val = parseFloat(cell ? cell.innerText : NaN);
+            if (!isNaN(val)) { total += val; count++; }
+        });
+        const avg = count > 0 ? total / count : 0;
+
+        if (totalIdx !== -1) {
+            const totalCell = row.cells[1 + totalIdx];
+            if (totalCell) totalCell.innerText = count > 0 ? total : '';
+        }
+        if (avgIdx !== -1) {
+            const avgCell = row.cells[1 + avgIdx];
+            if (avgCell) avgCell.innerText = count > 0 ? avg.toFixed(2) : '';
+        }
+        if (gradeIdx !== -1 && count > 0) {
+            const scale = getGradingScale();
+            if (scale.length > 0) {
+                const gradeCell = row.cells[1 + gradeIdx];
+                if (gradeCell) gradeCell.innerText = getGradeFromScale(avg, scale);
+            }
+        }
+    }
+
+    function recalcAllRows() {
+        document.querySelectorAll('#tableBody tr').forEach(recalcRow);
+        recalcPositions();
+    }
+
+    // Hesabu wastani (average) wa mstari mmoja kutoka columns za 'marks' pekee.
+    function getRowAverage(row) {
+        const roles = classifyColumns(currentColumns);
+        const marksIdxs = roles.map((r, i) => r === 'marks' ? i : -1).filter(i => i !== -1);
+        let total = 0, count = 0;
+        marksIdxs.forEach(ci => {
+            const cell = row.cells[1 + ci];
+            const val = parseFloat(cell ? cell.innerText : NaN);
+            if (!isNaN(val)) { total += val; count++; }
+        });
+        return count > 0 ? total / count : null;
+    }
+
+    // POSITION: inakokotolewa moja kwa moja kila wakati (siyo hiyari), kwa kulinganisha
+    // wastani wa kila mwanafunzi na wenzake. Standard competition ranking:
+    // wanaofanana wanapata position sawa, anayefuata anaruka namba (mfano 1,1,3,4...).
+    function recalcPositions() {
+        const rows = Array.from(document.querySelectorAll('#tableBody tr'));
+        const averages = rows.map(row => getRowAverage(row));
+
+        // Panga index za rows kwa mpangilio wa wastani mkubwa kwenda mdogo (wenye null mwishoni)
+        const sortedIdxs = averages
+            .map((avg, i) => ({ avg, i }))
+            .filter(o => o.avg !== null)
+            .sort((a, b) => b.avg - a.avg);
+
+        let lastAvg = null;
+        let lastPosition = 0;
+        let countAtThisAvg = 0;
+
+        sortedIdxs.forEach((o, rank) => {
+            if (lastAvg === null || o.avg !== lastAvg) {
+                lastPosition = rank + 1;
+                lastAvg = o.avg;
+            }
+            const posCell = rows[o.i].querySelector('.position-cell');
+            if (posCell) posCell.innerText = lastPosition;
+        });
+
+        // Rows zisizo na alama bado (average null) - position ibaki wazi
+        rows.forEach((row, i) => {
+            if (averages[i] === null) {
+                const posCell = row.querySelector('.position-cell');
+                if (posCell) posCell.innerText = '';
+            }
+        });
+    }
+
+    function buildHeader() {
+        const headerRow = document.getElementById('headerRow');
+        const isEn = document.getElementById('voiceLang') && document.getElementById('voiceLang').value === 'en-US';
+        let html = `<th>No</th>`;
+        currentColumns.forEach((c, i) => {
+            html += `<th>${c} <span class="col-del no-print" onclick="removeColumn(${i})" title="${isEn ? 'Delete column' : 'Futa column'}">&times;</span></th>`;
+        });
+        // "Position" ni column ya kudumu - inaonekana kila wakati bila kuhitaji tick,
+        // kwa sababu ripoti ya matokeo ya darasa daima inahitaji nafasi ya mwanafunzi.
+        html += `<th>${isEn ? 'Position' : 'Position'}</th>`;
+        html += `<th class="no-print">${isEn ? 'Action' : 'Kitendo'}</th>`;
+        headerRow.innerHTML = html;
+    }
+
+    // Hufanya seli sahihi kulingana na aina ya column: kawaida (maandishi huru),
+    // auto ya kukokotoa (Jumla/Wastani/Grade), au auto ya kuchagua (Jinsia).
+    function makeCell(role, prefillValue) {
+        const cell = document.createElement('td');
+        const value = prefillValue || '';
+        if (role === 'total' || role === 'average' || role === 'grade') {
+            cell.contentEditable = "false";
+            cell.classList.add('auto-cell');
+            cell.innerText = value;
+        } else if (role === 'gender') {
+            cell.contentEditable = "false";
+            // Jaribu kutambua jinsia kutoka jina la mwanafunzi (column ya 'name') kwanza.
+            // Kama value tayari imetolewa (Me/Ke/M/F), itumike hiyo badala yake.
+            let selected = '';
+            const v = (value || '').trim().toLowerCase();
+            if (v.startsWith('m')) selected = 'Me';
+            else if (v.startsWith('k') || v.startsWith('f')) selected = 'Ke';
+            else {
+                const nameCell = Array.from(cell.parentElement ? cell.parentElement.cells : []).find((c, idx) => {
+                    const roles = classifyColumns(currentColumns);
+                    return roles[idx - 1] === 'name';
+                });
+                if (nameCell) selected = guessGenderFromName(nameCell.innerText);
+            }
+            const meLabel = document.getElementById('voiceLang').value === 'en-US' ? 'M' : 'Me';
+            const keLabel = document.getElementById('voiceLang').value === 'en-US' ? 'F' : 'Ke';
+            cell.innerHTML = `<select style="width:100%; border:none; background:transparent; font-size:0.78rem; text-align:center;">
+                <option value=""></option>
+                <option value="Me"${selected === 'Me' ? ' selected' : ''}>${meLabel}</option>
+                <option value="Ke"${selected === 'Ke' ? ' selected' : ''}>${keLabel}</option>
+            </select>`;
+        } else {
+            cell.contentEditable = "true";
+            cell.innerText = value;
+        }
+        return cell;
+    }
+
+    // Ongeza column - kazi ya pamoja kwa "kawaida" na "auto"
+    function addColumnByName(name) {
+        name = (name || '').trim();
+        if (!name) { alert(t('noColumnName')); return; }
+        if (currentColumns.some(c => c.toLowerCase() === name.toLowerCase())) {
+            alert(t('columnExists'));
+            return;
+        }
+
+        currentColumns.push(name);
+        buildHeader();
+
+        const roles = classifyColumns(currentColumns);
+        const newRole = roles[roles.length - 1];
+        const tbody = document.getElementById('tableBody');
+
+        Array.from(tbody.rows).forEach(row => {
+            const actionCell = row.cells[row.cells.length - 1];
+            const newCell = makeCell(newRole, '');
+            row.insertBefore(newCell, actionCell);
+        });
+
+        if (tbody.rows.length === 0) addRow();
+
+        updateMicHint();
+        recalcAllRows();
+        syncAutoCheckboxes();
+    }
+
+    function addSingleColumn() {
+        const input = document.getElementById('newColumnInput');
+        addColumnByName(input.value);
+        input.value = '';
+    }
+
+    // Column za "auto" (Jumla/Wastani/Jinsia/Grade) - hiyari, kwa tick box
+    function toggleAutoColumn(name, checked) {
+        const idx = currentColumns.findIndex(c => c.toLowerCase() === name.toLowerCase());
+        if (checked) {
+            if (idx === -1) addColumnByName(name);
+        } else {
+            if (idx !== -1) removeColumnAt(idx);
+        }
+    }
+
+    function syncAutoCheckboxes() {
+        const map = { 'Jumla': 'autoJumla', 'Wastani': 'autoWastani', 'Jinsia': 'autoJinsia', 'Grade': 'autoGrade' };
+        Object.keys(map).forEach(name => {
+            const checkbox = document.getElementById(map[name]);
+            if (checkbox) checkbox.checked = currentColumns.some(c => c.toLowerCase() === name.toLowerCase());
+        });
+    }
+
+    function removeColumnAt(index) {
+        currentColumns.splice(index, 1);
+        buildHeader();
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            const cell = row.cells[index + 1];
+            if (cell) row.removeChild(cell);
+        });
+        updateMicHint();
+        recalcAllRows();
+        syncAutoCheckboxes();
+    }
+
+    // Kufuta column kutoka kwenye "x" ya kichwa cha jedwali - lazima kuthibitisha
+    function removeColumn(index) {
+        const ok = confirm(`${t('confirmDeleteCol')} "${currentColumns[index]}"?`);
+        if (!ok) { syncAutoCheckboxes(); return; }
+        removeColumnAt(index);
+    }
+
+    // ============ ROWS ============
+    function addRow(prefillArr) {
+        const tbody = document.getElementById('tableBody');
+        const row = tbody.insertRow();
+        const rowNum = tbody.rows.length;
+
+        let cellNo = row.insertCell(0);
+        cellNo.contentEditable = "true";
+        cellNo.innerText = rowNum;
+
+        const roles = classifyColumns(currentColumns);
+        currentColumns.forEach((col, idx) => {
+            const value = (prefillArr && prefillArr[idx] !== undefined) ? prefillArr[idx] : '';
+            const cell = makeCell(roles[idx], value);
+            row.appendChild(cell);
+        });
+
+        const positionCell = document.createElement('td');
+        positionCell.className = 'auto-cell position-cell';
+        positionCell.contentEditable = "false";
+        positionCell.innerText = '';
+        row.appendChild(positionCell);
+
+        const isEn = document.getElementById('voiceLang') && document.getElementById('voiceLang').value === 'en-US';
+        const actionCell = document.createElement('td');
+        actionCell.className = 'no-print';
+        actionCell.innerHTML = `<button class="del-btn" onclick="deleteRow(this)">${isEn ? 'Delete' : 'Futa'}</button>`;
+        row.appendChild(actionCell);
+
+        recalcRow(row);
+        applyAutoGenderToRow(row);
+        recalcPositions();
+    }
+
+    // Ikiwa row ina column ya 'name' na column ya 'gender', jaza Me/Ke kiotomatiki
+    // kutokana na jina - isipokuwa mtumiaji tayari amechagua kitu mwenyewe.
+    function applyAutoGenderToRow(row) {
+        const roles = classifyColumns(currentColumns);
+        const nameIdx = roles.indexOf('name');
+        const genderIdx = roles.indexOf('gender');
+        if (nameIdx === -1 || genderIdx === -1) return;
+        const nameCell = row.cells[1 + nameIdx];
+        const genderCell = row.cells[1 + genderIdx];
+        if (!nameCell || !genderCell) return;
+        const select = genderCell.querySelector('select');
+        if (!select || select.value) return; // usibadilishe kama mtumiaji tayari amechagua
+        const guess = guessGenderFromName(nameCell.innerText);
+        if (guess) select.value = guess;
+    }
+
+    function deleteRow(button) {
+        button.closest('tr').remove();
+        recalcPositions();
+    }
+
+    // Mtumiaji akibadilisha namba ya alama kwenye seli yoyote, Jumla/Wastani
+    // (kama zipo) zinajirekebisha zenyewe papo hapo - bila kitufe.
+    document.getElementById('tableBody').addEventListener('input', function (e) {
+        const cell = e.target;
+        if (!cell || cell.tagName !== 'TD') return;
+        const colIdx = cell.cellIndex - 1;
+        if (colIdx < 0 || colIdx >= currentColumns.length) return;
+        const roles = classifyColumns(currentColumns);
+        if (roles[colIdx] === 'marks') { recalcRow(cell.parentElement); recalcPositions(); }
+        if (roles[colIdx] === 'name') applyAutoGenderToRow(cell.parentElement);
+    });
+
+    // ============ GRADING SCALE ============
+    function addGradeRow(min = '', max = '', letter = '') {
+        const container = document.getElementById('gradeScaleRows');
+        const div = document.createElement('div');
+        div.className = 'grade-row';
+        div.innerHTML = `
+            <input type="number" class="g-min" placeholder="Kuanzia" value="${min}">
+            <span>-</span>
+            <input type="number" class="g-max" placeholder="Hadi" value="${max}">
+            <input type="text" class="g-letter" placeholder="Daraja" value="${letter}" maxlength="3">
+            <button type="button" onclick="this.parentElement.remove()">&#10005;</button>
+        `;
+        container.appendChild(div);
+    }
+
+    function getGradingScale() {
+        const rows = document.querySelectorAll('#gradeScaleRows .grade-row');
+        let scale = [];
+        rows.forEach(r => {
+            const min = parseFloat(r.querySelector('.g-min').value);
+            const max = parseFloat(r.querySelector('.g-max').value);
+            const letter = r.querySelector('.g-letter').value.trim();
+            if (!isNaN(min) && !isNaN(max) && letter) scale.push({ min, max, letter });
+        });
+        scale.sort((a, b) => b.min - a.min);
+        return scale;
+    }
+
+    function getGradeFromScale(score, scale) {
+        for (const g of scale) {
+            if (score >= g.min && score <= g.max) return g.letter;
+        }
+        return '-';
+    }
+
+    function computeGrades() {
+        const scale = getGradingScale();
+        if (scale.length === 0) { alert(t('noGradeScale')); return; }
+
+        const roles = classifyColumns(currentColumns);
+        const gradeIdx = roles.indexOf('grade');
+        if (gradeIdx === -1) { alert(t('noGradeColumn')); return; }
+
+        const marksIdxs = roles.map((r, i) => r === 'marks' ? i : -1).filter(i => i !== -1);
+        if (marksIdxs.length === 0) { alert(t('noMarksColumn')); return; }
+
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            let total = 0, count = 0;
+            marksIdxs.forEach(ci => {
+                const cell = row.cells[1 + ci];
+                const val = parseFloat(cell ? cell.innerText : NaN);
+                if (!isNaN(val)) { total += val; count++; }
+            });
+            const avg = count > 0 ? total / count : 0;
+            const letter = getGradeFromScale(avg, scale);
+            const gradeCell = row.cells[1 + gradeIdx];
+            if (gradeCell) gradeCell.innerText = letter;
+        });
+    }
+
+    // ============ SPEECH RECOGNITION (Bilingual) ============
+    let recognition;
+    let isRecording = false;
+
+    function updateMicHint() {
+        const status = document.getElementById('micStatus');
+        const roles = classifyColumns(currentColumns);
+        const speakableCols = currentColumns.filter((c, i) => !['total', 'average', 'grade', 'gender'].includes(roles[i]));
+        const example = speakableCols.length > 0 ? speakableCols.join(', ') : (document.getElementById('voiceLang').value === 'en-US' ? 'Name, Marks' : 'Jina, Alama');
+        status.innerText = `${t('micHintPrefix')}: ${example}`;
+    }
+
+    function toggleSpeechRecognition() {
+        const micBtn = document.getElementById('micBtn');
+        const micStatus = document.getElementById('micStatus');
+        const waveContainer = document.getElementById('waveContainer');
+        const lang = document.getElementById('voiceLang').value;
+
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert(t('noSpeechSupport'));
+            return;
+        }
+
+        if (!isRecording) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = lang;
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = function () {
+                isRecording = true;
+                micBtn.classList.add('recording');
+                waveContainer.classList.add('active');
+                micStatus.innerText = t('listening');
+            };
+
+            recognition.onresult = function (event) {
+                const speechResult = event.results[0][0].transcript.trim();
+                micStatus.innerText = t('youSaid') + `"${speechResult}"`;
+                processVoiceData(speechResult);
+            };
+
+            recognition.onerror = function (event) {
+                const isEn = lang === 'en-US';
+                let msg = t('micError');
+                if (event && event.error === 'not-allowed') {
+                    msg = isEn
+                        ? 'Microphone access denied. Open Chrome menu (⋮) > Site settings > Microphone, and allow it for this page.'
+                        : 'Ruhusa ya maiki imekataliwa. Fungua menyu ya Chrome (⋮) > Site settings > Microphone, kisha ruhusu kwa ukurasa huu.';
+                } else if (event && event.error === 'network') {
+                    msg = isEn
+                        ? 'No internet connection. Speech recognition needs internet to work.'
+                        : 'Hakuna intaneti. Kutambua sauti kunahitaji intaneti ili kufanya kazi.';
+                } else if (event && event.error === 'no-speech') {
+                    msg = isEn ? 'No speech detected. Try again and speak clearly.' : 'Hakuna sauti iliyosikika. Jaribu tena na useme wazi.';
+                } else if (event && event.error === 'audio-capture') {
+                    msg = isEn ? 'No microphone found on this device.' : 'Hakuna maiki iliyopatikana kwenye kifaa hiki.';
+                } else if (location.protocol === 'file:') {
+                    msg = isEn
+                        ? 'This file was opened directly (file://). Speech recognition needs it to be opened via a website (https). Try opening it from a hosted link instead of Files/Downloads.'
+                        : 'Faili hili limefunguliwa moja kwa moja (file://). Kutambua sauti kunahitaji lifunguliwe kupitia tovuti (https), si moja kwa moja kutoka Files/Downloads.';
+                }
+                micStatus.innerText = msg;
+                stopRecordingState();
+            };
+
+            recognition.onend = function () { stopRecordingState(); };
+
+            recognition.start();
+        } else {
+            recognition.stop();
+            stopRecordingState();
+        }
+    }
+
+    function stopRecordingState() {
+        isRecording = false;
+        document.getElementById('micBtn').classList.remove('recording');
+        document.getElementById('waveContainer').classList.remove('active');
+    }
+
+    let pendingVoiceValues = [];
+
+    // ---- Kubadilisha maneno ya namba (Kiswahili/Kiingereza) kuwa tarakimu ----
+    // Mfano: "ishirini na tano" -> 25, "thelathini na nane" -> 38, "twenty five" -> 25
+    const SW_UNITS = { 'sifuri':0,'moja':1,'mbili':2,'tatu':3,'nne':4,'nne':4,'tano':5,'sita':6,'saba':7,'nane':8,'tisa':9 };
+    const SW_TEENS = { 'kumi':10,'kumi na moja':11,'kumi na mbili':12,'kumi na tatu':13,'kumi na nne':14,'kumi na tano':15,'kumi na sita':16,'kumi na saba':17,'kumi na nane':18,'kumi na tisa':19 };
+    const SW_TENS = { 'ishirini':20,'thelathini':30,'arobaini':40,'hamsini':50,'sitini':60,'sabini':70,'themanini':80,'tisini':90 };
+    const SW_HUNDREDS_WORD = 'mia';
+    const EN_UNITS = { 'zero':0,'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9 };
+    const EN_TEENS = { 'ten':10,'eleven':11,'twelve':12,'thirteen':13,'fourteen':14,'fifteen':15,'sixteen':16,'seventeen':17,'eighteen':18,'nineteen':19 };
+    const EN_TENS = { 'twenty':20,'thirty':30,'forty':40,'fifty':50,'sixty':60,'seventy':70,'eighty':80,'ninety':90 };
+
+    // Badilisha sentensi nzima (maneno ya namba yaliyounganishwa na "na"/"and") kuwa
+    // tokeni moja ya tarakimu. Mfano: ['ishirini','na','tano'] -> '25'
+    function normalizeNumberWordsInText(text) {
+        let words = text.trim().split(/\s+/);
+        let out = [];
+        let i = 0;
+        while (i < words.length) {
+            const lw = words[i].toLowerCase().replace(/[.,]/g, '');
+
+            // --- Kiswahili: "mia [na <unit>]" mfano "mia na tano" = 105 (nadra kwa alama za shule) ---
+            if (lw === SW_HUNDREDS_WORD) {
+                let value = 100;
+                let j = i + 1;
+                if (j + 1 < words.length && words[j].toLowerCase() === 'na') {
+                    const nxt = words[j + 1].toLowerCase().replace(/[.,]/g, '');
+                    if (SW_UNITS.hasOwnProperty(nxt)) {
+                        value += SW_UNITS[nxt];
+                        j += 2;
+                    }
+                }
+                out.push(String(value));
+                i = j;
+                continue;
+            }
+
+            // --- Kiswahili tens: "ishirini na tano" ---
+            if (SW_TENS.hasOwnProperty(lw)) {
+                let value = SW_TENS[lw];
+                let j = i + 1;
+                if (j < words.length && words[j].toLowerCase() === 'na' && j + 1 < words.length) {
+                    const nxt = words[j + 1].toLowerCase().replace(/[.,]/g, '');
+                    if (SW_UNITS.hasOwnProperty(nxt)) {
+                        value += SW_UNITS[nxt];
+                        j += 2;
+                    }
+                }
+                out.push(String(value));
+                i = j;
+                continue;
+            }
+            // --- Kiswahili teens: "kumi na tano" ---
+            if (lw === 'kumi') {
+                let value = 10;
+                let j = i + 1;
+                if (j < words.length && words[j].toLowerCase() === 'na' && j + 1 < words.length) {
+                    const nxt = words[j + 1].toLowerCase().replace(/[.,]/g, '');
+                    if (SW_UNITS.hasOwnProperty(nxt)) {
+                        value += SW_UNITS[nxt];
+                        j += 2;
+                    }
+                }
+                out.push(String(value));
+                i = j;
+                continue;
+            }
+            // --- English tens: "twenty five" ---
+            if (EN_TENS.hasOwnProperty(lw)) {
+                let value = EN_TENS[lw];
+                let j = i + 1;
+                if (j < words.length) {
+                    const nxt = words[j].toLowerCase().replace(/[.,]/g, '');
+                    if (EN_UNITS.hasOwnProperty(nxt)) {
+                        value += EN_UNITS[nxt];
+                        j += 1;
+                    }
+                }
+                out.push(String(value));
+                i = j;
+                continue;
+            }
+            // --- English teens ---
+            if (EN_TEENS.hasOwnProperty(lw)) {
+                out.push(String(EN_TEENS[lw]));
+                i += 1;
+                continue;
+            }
+            // --- Single unit words (Kiswahili/Kiingereza) ---
+            if (SW_UNITS.hasOwnProperty(lw)) {
+                out.push(String(SW_UNITS[lw]));
+                i += 1;
+                continue;
+            }
+            if (EN_UNITS.hasOwnProperty(lw)) {
+                out.push(String(EN_UNITS[lw]));
+                i += 1;
+                continue;
+            }
+
+            // Siyo neno la namba - liache kama lilivyo
+            out.push(words[i]);
+            i += 1;
+        }
+        return out.join(' ');
+    }
+
+    function wordToNumberMaybe(word) {
+        const w = word.toLowerCase().replace(/[.,]/g, '');
+        if (!isNaN(parseFloat(w)) && w !== '') return w;
+        return null;
+    }
+
+    // Inatambua sauti moja kama: "Jina Fulani <namba> <namba> <namba>..."
+    // Mfano: "Baraka Kajange 24 30 40" -> jina = "Baraka Kajange", namba = [24, 30, 40]
+    // Kanuni: maneno ya mwanzo (yasiyo namba) yanaunda jina, kila neno la namba
+    // linalofuata linakwenda kwenye column inayofuata kwa mpangilio (marks, kisha nyingine).
+    function smartParseVoice(data) {
+        // Kwanza, badilisha maneno ya namba (mfano "ishirini na tano") kuwa tarakimu (25)
+        data = normalizeNumberWordsInText(data);
+
+        // Kama tayari kuna koma, mtumiaji ametenganisha mwenyewe - heshimu hilo kwanza.
+        if (data.includes(',')) {
+            return data.split(',').map(item => item.trim());
+        }
+
+        const roles = classifyColumns(currentColumns);
+        const speakableIdxs = currentColumns
+            .map((c, i) => ({ c, i }))
+            .filter(o => !['total', 'average', 'grade'].includes(roles[o.i]));
+
+        const words = data.trim().split(/\s+/);
+        const nameWords = [];
+        const numberTokens = [];
+        let sawNumber = false;
+
+        words.forEach(word => {
+            const num = wordToNumberMaybe(word);
+            if (num !== null) {
+                sawNumber = true;
+                numberTokens.push(num);
+            } else if (!sawNumber) {
+                nameWords.push(word);
+            } else {
+                // neno lisilo namba baada ya namba kuanza - liambatanishwe kwenye namba ya karibuni
+                // (mfano "24 pointi") - kwa usalama, tunalipuuza.
+            }
+        });
+
+        const parts = [];
+        let numPtr = 0;
+        speakableIdxs.forEach(o => {
+            const role = roles[o.i];
+            if (role === 'name') {
+                parts[o.i] = nameWords.join(' ');
+            } else if (role === 'gender' || role === 'id') {
+                parts[o.i] = ''; // hizi hazitajwi kwa sauti moja pamoja na majina+alama
+            } else {
+                // 'marks' au column nyingine yoyote ya kawaida - jaza kwa mpangilio wa namba
+                parts[o.i] = numberTokens[numPtr] !== undefined ? numberTokens[numPtr] : '';
+                numPtr++;
+            }
+        });
+
+        // Kama hapakuwa na column ya 'name' iliyotambulika lakini kuna maneno ya jina,
+        // weka jina kwenye column ya kwanza inayozungumzika.
+        if (nameWords.length > 0 && !roles.includes('name') && speakableIdxs.length > 0) {
+            parts[speakableIdxs[0].i] = nameWords.join(' ');
+        }
+
+        return currentColumns.map((c, i) => parts[i] !== undefined ? parts[i] : '');
+    }
+
+    function processVoiceData(data) {
+        const parts = smartParseVoice(data);
+        showVoicePreview(parts);
+    }
+
+    function showVoicePreview(parts) {
+        const roles = classifyColumns(currentColumns);
+        pendingVoiceValues = currentColumns.map((c, i) => parts[i] !== undefined ? parts[i] : '');
+
+        const fieldsContainer = document.getElementById('voicePreviewFields');
+        let html = '';
+        currentColumns.forEach((col, i) => {
+            if (roles[i] === 'total' || roles[i] === 'average' || roles[i] === 'grade') return; // auto - hazihitaji sauti
+            const safeVal = (pendingVoiceValues[i] || '').replace(/"/g, '&quot;');
+            html += `
+            <div>
+                <label class="field-label">${col}</label>
+                <input type="text" class="form-control" style="margin-bottom:0;"
+                    value="${safeVal}" oninput="pendingVoiceValues[${i}] = this.value">
+            </div>`;
+        });
+        fieldsContainer.innerHTML = html;
+        document.getElementById('voicePreview').style.display = 'block';
+    }
+
+    function confirmVoiceRow() {
+        addRow(pendingVoiceValues);
+        cancelVoicePreview();
+        document.getElementById('micStatus').innerHTML = t('rowAdded');
+    }
+
+    function cancelVoicePreview() {
+        document.getElementById('voicePreview').style.display = 'none';
+        pendingVoiceValues = [];
+    }
+
+    function retryListening() {
+        cancelVoicePreview();
+        toggleSpeechRecognition();
+    }
+
+    // ============ PREVIEW / EXPORT ============
+
+    // Jenga HTML safi ya ripoti rasmi: heading + jedwali (bila vitufe/select/"x"),
+    // wino mweusi tu. Hii ndiyo inayotumika kwa Preview modal NA kwa PDF - ili
+    // vyote viwili vionyeshe kitu kile kile, kwa uhakika, bila kutegemea screenshot
+    // ya ukurasa mzima (ambayo mara nyingi inashindwa kwenye simu).
+    function buildOfficialReportHTML() {
+        const school = document.getElementById('hdgSchool').value.trim();
+        const title = document.getElementById('hdgTitle').value.trim();
+        const klass = document.getElementById('hdgClass').value.trim();
+        const term = document.getElementById('hdgTerm').value.trim();
+
+        let headingHtml = '';
+        if (school || title || klass || term) {
+            headingHtml += '<div style="text-align:center; margin-bottom:14px;">';
+            if (school) headingHtml += `<div style="font-size:1.15rem; font-weight:800; text-transform:uppercase;">${escapeHtml(school)}</div>`;
+            if (title) headingHtml += `<div style="font-size:1rem; font-weight:700; margin-top:3px;">${escapeHtml(title)}</div>`;
+            const subParts = [klass, term].filter(Boolean).join('  |  ');
+            if (subParts) headingHtml += `<div style="font-size:0.85rem; color:#333; margin-top:3px;">${escapeHtml(subParts)}</div>`;
+            headingHtml += '</div>';
+        }
+
+        // Vichwa vya column - bila "x" ya kufuta
+        let theadHtml = '<tr><th>No</th>';
+        currentColumns.forEach(c => { theadHtml += `<th>${escapeHtml(c)}</th>`; });
+        theadHtml += '<th>Position</th></tr>';
+
+        // Rows - soma thamani halisi kutoka kwenye jedwali la kazi (select -> value yake iliyochaguliwa)
+        // Tunatumia textContent (siyo innerText) kwa sababu textContent haitegemei
+        // "layout"/uonekano wa element - ni ya uhakika zaidi kwenye vivinjari vyote,
+        // hasa WebView za simu ambazo mara nyingine hazitoi innerText sahihi.
+        let tbodyHtml = '';
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            tbodyHtml += '<tr>';
+            tbodyHtml += `<td>${escapeHtml((row.cells[0].textContent || '').trim())}</td>`;
+            currentColumns.forEach((col, idx) => {
+                const cell = row.cells[1 + idx];
+                let val = '';
+                if (cell) {
+                    const select = cell.querySelector('select');
+                    val = select ? (select.options[select.selectedIndex] ? select.options[select.selectedIndex].text : '') : (cell.textContent || '');
+                }
+                tbodyHtml += `<td>${escapeHtml(val.trim ? val.trim() : val)}</td>`;
+            });
+            const posCell = row.querySelector('.position-cell');
+            tbodyHtml += `<td>${escapeHtml(((posCell ? posCell.textContent : '') || '').trim())}</td>`;
+            tbodyHtml += '</tr>';
+        });
+
+        const tableHtml = `<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead>${theadHtml}</thead>
+            <tbody>${tbodyHtml}</tbody>
+        </table>`;
+
+        return { headingHtml, tableHtml };
+    }
+
+    // MUHIMU: tumia regex badala ya innerText ya element isiyo kwenye DOM -
+    // innerText inahitaji "layout" ambayo baadhi ya vivinjari (hasa WebView za simu)
+    // haziifanyi kwa element isiyounganishwa kwenye ukurasa, hivyo inarudisha "" tupu
+    // na kusababisha PDF/Excel kuonekana peupe hata kama data ipo.
+    function escapeHtml(str) {
+        str = (str === null || str === undefined) ? '' : String(str);
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function previewReport() {
+        const { headingHtml, tableHtml } = buildOfficialReportHTML();
+        document.getElementById('previewTableWrap').innerHTML = headingHtml + tableHtml;
+        // Weka border nyeusi kwenye th/td za ndani ya modal (zilizotengenezwa upya)
+        document.querySelectorAll('#previewTableWrap th, #previewTableWrap td').forEach(el => {
+            el.style.border = '1px solid #000';
+            el.style.padding = '8px';
+            el.style.textAlign = 'center';
+            el.style.color = '#000';
+        });
+        document.getElementById('previewModal').classList.add('open');
+    }
+
+    function closePreviewModal() {
+        document.getElementById('previewModal').classList.remove('open');
+    }
+
+    // Tengeneza jina la faili kutoka kwenye heading (Kichwa cha Ripoti, au Jina la Shule)
+    // badala ya jina tuli - mfano "Matokeo_ya_Mtihani_wa_Muhula.pdf" badala ya jina la ajabu.
+    function buildReportFilename(ext) {
+        const title = document.getElementById('hdgTitle').value.trim();
+        const school = document.getElementById('hdgSchool').value.trim();
+        const klass = document.getElementById('hdgClass').value.trim();
+        let base = [title, klass].filter(Boolean).join('_') || school || 'Moby_Academic_Report';
+        base = base
+            .replace(/[\\/:*?"<>|]/g, '')   // ondoa herufi zisizoruhusiwa kwenye jina la faili
+            .replace(/\s+/g, '_')
+            .slice(0, 80);
+        return base;
+    }
+
+    // ---- Rename-before-download flow: onyesha jina la pendekezo, mtumiaji
+    // anaweza kulibadilisha, kisha bonyeza "Pakua" ndipo faili halisi litengenezwe. ----
+    let pendingDownloadType = null; // 'pdf' | 'excel'
+
+    function openRenameModal(type) {
+        pendingDownloadType = type;
+        const ext = type === 'pdf' ? 'pdf' : 'xls';
+        document.getElementById('renameInput').value = buildReportFilename(ext);
+        document.getElementById('renameModal').classList.add('open');
+        document.getElementById('renameInput').focus();
+        document.getElementById('renameInput').select();
+    }
+
+    function closeRenameModal() {
+        document.getElementById('renameModal').classList.remove('open');
+        pendingDownloadType = null;
+    }
+
+    document.getElementById('renameConfirmBtn').addEventListener('click', function () {
+        let name = document.getElementById('renameInput').value.trim();
+        const ext = pendingDownloadType === 'pdf' ? 'pdf' : 'xls';
+        if (!name) name = 'Moby_Academic_Report';
+        name = name.replace(/[\\/:*?"<>|]/g, '').trim();
+        // Kama mtumiaji hakuandika kiendelezi sahihi, tuliongeze wenyewe
+        if (!new RegExp('\\.' + ext + '$', 'i').test(name)) name += '.' + ext;
+
+        const type = pendingDownloadType;
+        closeRenameModal();
+        if (type === 'pdf') doSavePDF(name);
+        else if (type === 'excel') doSaveExcel(name);
+    });
+
+    // Vitufe vya "Save PDF" / "Save Excel" sasa vinafungua rename modal kwanza
+    function savePDF() { openRenameModal('pdf'); }
+    function saveExcel() { openRenameModal('excel'); }
+
+    function doSavePDF(filename) {
+        const { headingHtml, tableHtml } = buildOfficialReportHTML();
+        const btn = document.getElementById('pdfBtn');
+        const btnModal = document.getElementById('pdfBtnModal');
+        const prevHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.innerHTML = t('generatingPdf'); btn.disabled = true; }
+        if (btnModal) btnModal.disabled = true;
+
+        // MUHIMU: baadhi ya vivinjari (hasa WebView za simu) hazichori vizuri
+        // element iliyosogezwa mbali na screen (left:-9999px) - html2canvas
+        // inaweza kurudisha picha tupu. Hivyo tunaiweka wrapper KATIKA eneo
+        // linaloonekana kabisa (juu ya kila kitu, ndani ya viewport), lakini
+        // nyuma ya preview modal (z-index ya chini) - hivyo mtumiaji karibu
+        // haioni ikiwaka, lakini html2canvas inaichora kwa uhakika.
+        const wrapper = document.createElement('div');
+        wrapper.id = 'pdfRenderWrapper';
+        wrapper.style.position = 'fixed';
+        wrapper.style.left = '0';
+        wrapper.style.top = '0';
+        wrapper.style.width = '1100px';
+        wrapper.style.zIndex = '-1';
+        wrapper.style.background = '#ffffff';
+        wrapper.style.padding = '24px';
+        wrapper.style.fontFamily = "'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif";
+        wrapper.innerHTML = headingHtml + tableHtml;
+        wrapper.querySelectorAll('th, td').forEach(el => {
+            el.style.border = '1px solid #000';
+            el.style.padding = '8px';
+            el.style.textAlign = 'center';
+            el.style.color = '#000';
+            el.style.background = '#ffffff';
+        });
+        document.body.appendChild(wrapper);
+
+        const options = {
+            margin: [0.3, 0.3, 0.3, 0.3],
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+                scale: 2, useCORS: true, backgroundColor: '#ffffff',
+                windowWidth: 1100, x: 0, y: 0, scrollX: 0, scrollY: 0
+            },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+        };
+
+        function restore() {
+            if (wrapper.parentNode) document.body.removeChild(wrapper);
+            if (btn) { btn.innerHTML = prevHTML; btn.disabled = false; }
+            if (btnModal) btnModal.disabled = false;
+        }
+
+        html2pdf().set(options).from(wrapper).save().then(restore).catch(function (err) {
+            console.error('PDF error:', err);
+            restore();
+            alert(t('pdfError'));
+        });
+    }
+
+    function doSaveExcel(filename) {
+        const { tableHtml } = buildOfficialReportHTML();
+
+        const school = document.getElementById('hdgSchool').value.trim();
+        const title = document.getElementById('hdgTitle').value.trim();
+        const klass = document.getElementById('hdgClass').value.trim();
+        const term = document.getElementById('hdgTerm').value.trim();
+        const colCount = currentColumns.length + 2; // No + columns + Position
+
+        let excelHeadingRows = '';
+        if (school || title || klass || term) {
+            if (school) excelHeadingRows += `<tr><td colspan="${colCount}" style="text-align:center;font-weight:bold;font-size:16px;">${escapeHtml(school)}</td></tr>`;
+            if (title) excelHeadingRows += `<tr><td colspan="${colCount}" style="text-align:center;font-weight:bold;">${escapeHtml(title)}</td></tr>`;
+            const subParts = [klass, term].filter(Boolean).join('  |  ');
+            if (subParts) excelHeadingRows += `<tr><td colspan="${colCount}" style="text-align:center;">${escapeHtml(subParts)}</td></tr>`;
+            excelHeadingRows += `<tr><td colspan="${colCount}">&nbsp;</td></tr>`;
+        }
+
+        // Jenga table moja kamili: heading rows + thead + tbody (bila <table> ya ndani mara mbili)
+        const fullHtml = `<table>${excelHeadingRows}${tableHtml.replace(/<table[^>]*>|<\/table>/g, '')}</table>`;
+
+        const url = 'data:application/vnd.ms-excel,' + encodeURIComponent(fullHtml);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    }
+
+    // ============ INIT ============
+    (function init() {
+        suppressAutoSave = true;
+        addGradeRow(41, 50, 'A');
+        addGradeRow(31, 40, 'B');
+        addGradeRow(21, 30, 'C');
+        addGradeRow(11, 20, 'D');
+        addGradeRow(0, 10, 'E');
+
+        currentColumns = [];
+        buildHeader();
+        applyLanguage();
+        suppressAutoSave = false;
+
+        attachAutoSaveListeners();
+        loadInitialState(); // itabadilisha fomu hii ikiwa kuna data iliyohifadhiwa Firebase
+    })();
+</script>
+
+</body>
+</html>
